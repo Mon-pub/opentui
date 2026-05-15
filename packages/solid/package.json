@@ -41,7 +41,6 @@
     "./jsx-dev-runtime": "./jsx-runtime.d.ts"
   },
   "devDependencies": {
-    "@opentui/keymap": "workspace:*",
     "@types/babel__core": "7.20.5",
     "@types/bun": "latest",
     "@types/node": "^24.0.0",
