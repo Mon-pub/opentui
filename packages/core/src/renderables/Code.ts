@@ -39,6 +39,7 @@ export interface CodeOptions extends TextBufferOptions {
   baseHighlight?: string
   onHighlight?: OnHighlightCallback
   onChunks?: OnChunksCallback
+  bidi?: "auto" | "always" | "never"
 }
 
 export class CodeRenderable extends TextBufferRenderable {
@@ -59,7 +60,14 @@ export class CodeRenderable extends TextBufferRenderable {
   private _onHighlight?: OnHighlightCallback
   private _onChunks?: OnChunksCallback
   private _highlightingPromise: Promise<void> = Promise.resolve()
+  private _bidi: "auto" | "always" | "never" = "never"
+  private _lastBidiWidth: number = -1
 
+  private static readonly _RLI = "\u2067" // Right-to-Left Isolate
+  private static readonly _LRI = "\u2066" // Left-to-Right Isolate
+  private static readonly _PDI = "\u2069"
+  private static readonly _LRM = "\u200e"
+  private static readonly _RTL_RE = /[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff]/
   protected _contentDefaultOptions = {
     content: "",
     conceal: true,
@@ -80,6 +88,12 @@ export class CodeRenderable extends TextBufferRenderable {
     this._baseHighlight = options.baseHighlight
     this._onHighlight = options.onHighlight
     this._onChunks = options.onChunks
+    this._bidi = options.bidi ?? "never"
+
+    if (this._bidi !== "never") {
+      this._wrapMode = "none"
+      this.textBufferView.setWrapMode("none")
+    }
 
     if (this._content.length > 0) {
       this.textBuffer.setText(this._content)
@@ -211,6 +225,22 @@ export class CodeRenderable extends TextBufferRenderable {
     }
   }
 
+  get bidi(): "auto" | "always" | "never" {
+    return this._bidi
+  }
+
+  set bidi(value: "auto" | "always" | "never") {
+    if (this._bidi !== value) {
+      this._bidi = value
+      const newWrapMode = value !== "never" ? "none" : "word"
+      this._wrapMode = newWrapMode
+      this.textBufferView.setWrapMode(newWrapMode)
+      this._highlightsDirty = true
+      this._lastBidiWidth = -1
+      this.requestRender()
+    }
+  }
+
   get isHighlighting(): boolean {
     return this._isHighlighting
   }
@@ -219,11 +249,124 @@ export class CodeRenderable extends TextBufferRenderable {
     return this._highlightingPromise
   }
 
-  protected async transformChunks(chunks: TextChunk[], context: ChunkRenderContext): Promise<TextChunk[]> {
-    if (!this._onChunks) return chunks
+  protected onResize(width: number, height: number): void {
+    super.onResize(width, height)
+    if (this._bidi !== "never" && width !== this._lastBidiWidth) {
+      const fullText = this._content
+      if (this._bidi === "always" || CodeRenderable._RTL_RE.test(fullText)) {
+        this._highlightsDirty = true
+      }
+    }
+  }
 
-    const modified = await this._onChunks(chunks, context)
-    return modified ?? chunks
+  protected async transformChunks(chunks: TextChunk[], context: ChunkRenderContext): Promise<TextChunk[]> {
+    if (this._onChunks) {
+      const modified = await this._onChunks(chunks, context)
+      chunks = modified ?? chunks
+    }
+
+    if (this._bidi !== "never" && this.width > 0) {
+      const fullText = chunks.map((c) => c.text).join("")
+      const hasRtl = CodeRenderable._RTL_RE.test(fullText)
+      if (this._bidi === "always" || hasRtl) {
+        chunks = this.injectBidiAnchors(chunks, this.width)
+        this._lastBidiWidth = this.width
+      }
+    }
+
+    return chunks
+  }
+
+  private injectBidiAnchors(chunks: TextChunk[], width: number): TextChunk[] {
+    const PDI = CodeRenderable._PDI
+    const LRM = CodeRenderable._LRM
+    const RLI = CodeRenderable._RLI
+    const LRI = CodeRenderable._LRI
+    const RTL_RE = CodeRenderable._RTL_RE
+
+    if (width <= 0) return chunks
+
+    // Build per-char list with originating chunk reference for styling preservation
+    type Cell = { ch: string; chunk: TextChunk }
+    const cells: Cell[] = []
+    for (const chunk of chunks) {
+      for (const ch of [...chunk.text]) {
+        cells.push({ ch, chunk })
+      }
+    }
+
+    // Word-aware wrap into display rows
+    const rows: Cell[][] = []
+    let row: Cell[] = []
+    let lastSpaceIdx = -1
+
+    for (const cell of cells) {
+      if (cell.ch === "\n") {
+        rows.push(row)
+        row = []
+        lastSpaceIdx = -1
+        continue
+      }
+      row.push(cell)
+      if (cell.ch === " ") lastSpaceIdx = row.length - 1
+      if (row.length >= width) {
+        if (lastSpaceIdx > 0) {
+          const completed = row.slice(0, lastSpaceIdx)
+          const remainder = row.slice(lastSpaceIdx + 1)
+          rows.push(completed)
+          row = remainder
+          lastSpaceIdx = -1
+          for (let j = row.length - 1; j >= 0; j--) {
+            if (row[j].ch === " ") {
+              lastSpaceIdx = j
+              break
+            }
+          }
+        } else {
+          rows.push(row)
+          row = []
+          lastSpaceIdx = -1
+        }
+      }
+    }
+    if (row.length > 0) rows.push(row)
+
+    // Emit each row wrapped in per-row isolate (RLI if RTL detected, LRI otherwise),
+    // followed by PDI+LRM. Self-contained scope per visual row prevents BiDi state leaking
+    // between rows or into adjacent renderables on the same terminal line.
+    const mk = (text: string): TextChunk => ({ __isChunk: true as const, text })
+    const result: TextChunk[] = []
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i]
+      if (r.length === 0) {
+        if (i < rows.length - 1) result.push(mk("\n"))
+        continue
+      }
+      const rowText = r.map((c) => c.ch).join("")
+      const iso = RTL_RE.test(rowText) ? RLI : LRI
+
+      result.push(mk(iso))
+      let j = 0
+      while (j < r.length) {
+        const startChunk = r[j].chunk
+        let k = j
+        while (k < r.length && r[k].chunk === startChunk) k++
+        const segText = r
+          .slice(j, k)
+          .map((c) => c.ch)
+          .join("")
+        result.push({ ...startChunk, text: segText })
+        j = k
+      }
+      result.push(mk(PDI + LRM))
+
+      if (i < rows.length - 1) {
+        result.push(mk("\n"))
+      }
+    }
+
+    return result
   }
 
   private ensureVisibleTextBeforeHighlight(): void {

@@ -121,6 +121,13 @@ export interface MarkdownOptions extends RenderableOptions<MarkdownRenderable> {
    * - "top-level": preserve top-level markdown blocks as separate render blocks.
    */
   internalBlockMode?: "coalesced" | "top-level"
+  /**
+   * BiDi (bidirectional text) anchoring mode for RTL/Arabic/Hebrew content.
+   * - "auto": inject FSI/PDI/LRM anchors only when RTL characters are detected.
+   * - "always": always inject BiDi anchors regardless of content.
+   * - "never": no BiDi processing (default).
+   */
+  bidi?: "auto" | "always" | "never"
 }
 
 export interface RenderNodeContext {
@@ -195,6 +202,7 @@ export class MarkdownRenderable extends Renderable {
   private _tableOptions?: MarkdownTableOptions
   private _renderNode?: MarkdownOptions["renderNode"]
   private _internalBlockMode: "coalesced" | "top-level"
+  private _bidi: "auto" | "always" | "never"
 
   _parseState: ParseState | null = null
   private _streaming: boolean = false
@@ -233,6 +241,7 @@ export class MarkdownRenderable extends Renderable {
     this._renderNode = options.renderNode
     this._streaming = options.streaming ?? this._contentDefaultOptions.streaming
     this._internalBlockMode = options.internalBlockMode ?? this._contentDefaultOptions.internalBlockMode
+    this._bidi = options.bidi ?? "never"
 
     this.updateBlocks()
   }
@@ -353,6 +362,18 @@ export class MarkdownRenderable extends Renderable {
     this._internalBlockMode = value
     this.updateBlocks(true)
     this.requestRender()
+  }
+
+  get bidi(): "auto" | "always" | "never" {
+    return this._bidi
+  }
+
+  set bidi(value: "auto" | "always" | "never") {
+    if (this._bidi === value) return
+    this._bidi = value
+    // Newly created blocks will pick up the updated _bidi value automatically.
+    // Existing blocks are not retroactively updated here; a content re-render
+    // (e.g. setting content again) will recreate them with the correct setting.
   }
 
   private getStyle(group: string): StyleDefinition | undefined {
@@ -560,6 +581,7 @@ export class MarkdownRenderable extends Renderable {
       treeSitterClient: this._treeSitterClient,
       width: "100%",
       marginBottom,
+      bidi: this._bidi,
     })
   }
 
