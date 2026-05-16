@@ -93,6 +93,9 @@ export class CodeRenderable extends TextBufferRenderable {
     if (this._bidi !== "never") {
       this._wrapMode = "none"
       this.textBufferView.setWrapMode("none")
+      if (this.width > 0) {
+        this.textBufferView.setWrapWidth(this.width)
+      }
     }
 
     if (this._content.length > 0) {
@@ -235,6 +238,9 @@ export class CodeRenderable extends TextBufferRenderable {
       const newWrapMode = value !== "never" ? "none" : "word"
       this._wrapMode = newWrapMode
       this.textBufferView.setWrapMode(newWrapMode)
+      if (value !== "never" && this.width > 0) {
+        this.textBufferView.setWrapWidth(this.width)
+      }
       this._highlightsDirty = true
       this._lastBidiWidth = -1
       this.requestRender()
@@ -251,10 +257,15 @@ export class CodeRenderable extends TextBufferRenderable {
 
   protected onResize(width: number, height: number): void {
     super.onResize(width, height)
-    if (this._bidi !== "never" && width !== this._lastBidiWidth) {
-      const fullText = this._content
-      if (this._bidi === "always" || CodeRenderable._RTL_RE.test(fullText)) {
-        this._highlightsDirty = true
+    if (this._bidi !== "never") {
+      if (width > 0) {
+        this.textBufferView.setWrapWidth(width)
+      }
+      if (width !== this._lastBidiWidth) {
+        const fullText = this._content
+        if (this._bidi === "always" || CodeRenderable._RTL_RE.test(fullText)) {
+          this._highlightsDirty = true
+        }
       }
     }
   }
