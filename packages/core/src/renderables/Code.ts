@@ -90,14 +90,6 @@ export class CodeRenderable extends TextBufferRenderable {
     this._onChunks = options.onChunks
     this._bidi = options.bidi ?? "never"
 
-    if (this._bidi !== "never") {
-      this._wrapMode = "none"
-      this.textBufferView.setWrapMode("none")
-      if (this.width > 0) {
-        this.textBufferView.setWrapWidth(this.width)
-      }
-    }
-
     if (this._content.length > 0) {
       this.textBuffer.setText(this._content)
       this.updateTextInfo()
@@ -235,12 +227,6 @@ export class CodeRenderable extends TextBufferRenderable {
   set bidi(value: "auto" | "always" | "never") {
     if (this._bidi !== value) {
       this._bidi = value
-      const newWrapMode = value !== "never" ? "none" : "word"
-      this._wrapMode = newWrapMode
-      this.textBufferView.setWrapMode(newWrapMode)
-      if (value !== "never" && this.width > 0) {
-        this.textBufferView.setWrapWidth(this.width)
-      }
       this._highlightsDirty = true
       this._lastBidiWidth = -1
       this.requestRender()
@@ -257,15 +243,10 @@ export class CodeRenderable extends TextBufferRenderable {
 
   protected onResize(width: number, height: number): void {
     super.onResize(width, height)
-    if (this._bidi !== "never") {
-      if (width > 0) {
-        this.textBufferView.setWrapWidth(width)
-      }
-      if (width !== this._lastBidiWidth) {
-        const fullText = this._content
-        if (this._bidi === "always" || CodeRenderable._RTL_RE.test(fullText)) {
-          this._highlightsDirty = true
-        }
+    if (this._bidi !== "never" && width !== this._lastBidiWidth) {
+      const fullText = this._content
+      if (this._bidi === "always" || CodeRenderable._RTL_RE.test(fullText)) {
+        this._highlightsDirty = true
       }
     }
   }
@@ -276,106 +257,64 @@ export class CodeRenderable extends TextBufferRenderable {
       chunks = modified ?? chunks
     }
 
-    if (this._bidi !== "never" && this.width > 0) {
+    if (this._bidi !== "never") {
       const fullText = chunks.map((c) => c.text).join("")
       const hasRtl = CodeRenderable._RTL_RE.test(fullText)
       if (this._bidi === "always" || hasRtl) {
-        chunks = this.injectBidiAnchors(chunks, this.width)
-        this._lastBidiWidth = this.width
+        chunks = this.injectBidiAnchors(chunks)
       }
     }
 
     return chunks
   }
 
-  private injectBidiAnchors(chunks: TextChunk[], width: number): TextChunk[] {
+  private injectBidiAnchors(chunks: TextChunk[]): TextChunk[] {
     const PDI = CodeRenderable._PDI
     const LRM = CodeRenderable._LRM
     const RLI = CodeRenderable._RLI
     const LRI = CodeRenderable._LRI
     const RTL_RE = CodeRenderable._RTL_RE
 
-    if (width <= 0) return chunks
+    // Inject isolates per source-line only. Native word-wrap handles visual
+    // wrapping at the renderable's width, so cells never extend past
+    // renderable bounds (no sidebar bleed-through). The terminal applies
+    // BiDi within each RLI/LRI scope; for source lines that span multiple
+    // visual rows after native wrap, the scope continues across rows.
+    const mk = (text: string): TextChunk => ({ __isChunk: true as const, text })
+    const result: TextChunk[] = []
+    type LineSeg = { chunk: TextChunk; text: string }
+    let currentLine: LineSeg[] = []
 
-    // Build per-char list with originating chunk reference for styling preservation
-    type Cell = { ch: string; chunk: TextChunk }
-    const cells: Cell[] = []
-    for (const chunk of chunks) {
-      for (const ch of [...chunk.text]) {
-        cells.push({ ch, chunk })
+    const flushLine = () => {
+      if (currentLine.length === 0) return
+      const lineText = currentLine.map((s) => s.text).join("")
+      if (lineText.length === 0) {
+        currentLine = []
+        return
       }
+      const iso = RTL_RE.test(lineText) ? RLI : LRI
+      result.push(mk(iso))
+      for (const seg of currentLine) {
+        result.push({ ...seg.chunk, text: seg.text })
+      }
+      result.push(mk(PDI + LRM))
+      currentLine = []
     }
 
-    // Word-aware wrap into display rows
-    const rows: Cell[][] = []
-    let row: Cell[] = []
-    let lastSpaceIdx = -1
-
-    for (const cell of cells) {
-      if (cell.ch === "\n") {
-        rows.push(row)
-        row = []
-        lastSpaceIdx = -1
-        continue
-      }
-      row.push(cell)
-      if (cell.ch === " ") lastSpaceIdx = row.length - 1
-      if (row.length >= width) {
-        if (lastSpaceIdx > 0) {
-          const completed = row.slice(0, lastSpaceIdx)
-          const remainder = row.slice(lastSpaceIdx + 1)
-          rows.push(completed)
-          row = remainder
-          lastSpaceIdx = -1
-          for (let j = row.length - 1; j >= 0; j--) {
-            if (row[j].ch === " ") {
-              lastSpaceIdx = j
-              break
-            }
-          }
-        } else {
-          rows.push(row)
-          row = []
-          lastSpaceIdx = -1
+    for (const chunk of chunks) {
+      const parts = chunk.text.split("\n")
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i]
+        if (part.length > 0) {
+          currentLine.push({ chunk, text: part })
+        }
+        if (i < parts.length - 1) {
+          flushLine()
+          result.push(mk("\n"))
         }
       }
     }
-    if (row.length > 0) rows.push(row)
-
-    // Emit each row wrapped in per-row isolate (RLI if RTL detected, LRI otherwise),
-    // followed by PDI+LRM. Self-contained scope per visual row prevents BiDi state leaking
-    // between rows or into adjacent renderables on the same terminal line.
-    const mk = (text: string): TextChunk => ({ __isChunk: true as const, text })
-    const result: TextChunk[] = []
-
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i]
-      if (r.length === 0) {
-        if (i < rows.length - 1) result.push(mk("\n"))
-        continue
-      }
-      const rowText = r.map((c) => c.ch).join("")
-      const iso = RTL_RE.test(rowText) ? RLI : LRI
-
-      result.push(mk(iso))
-      let j = 0
-      while (j < r.length) {
-        const startChunk = r[j].chunk
-        let k = j
-        while (k < r.length && r[k].chunk === startChunk) k++
-        const segText = r
-          .slice(j, k)
-          .map((c) => c.ch)
-          .join("")
-        result.push({ ...startChunk, text: segText })
-        j = k
-      }
-      result.push(mk(PDI + LRM))
-
-      if (i < rows.length - 1) {
-        result.push(mk("\n"))
-      }
-    }
+    flushLine()
 
     return result
   }
