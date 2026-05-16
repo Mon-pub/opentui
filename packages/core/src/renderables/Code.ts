@@ -114,7 +114,7 @@ export class CodeRenderable extends TextBufferRenderable {
       this._highlightsDirty = true
       this._highlightSnapshotId++
 
-      if (this._streaming && !this._drawUnstyledText && this._filetype) {
+      if (this._streaming && !this._drawUnstyledText && this._filetype && this._bidi === "never") {
         this.requestRender()
         return
       }
@@ -376,6 +376,16 @@ export class CodeRenderable extends TextBufferRenderable {
 
     if (!this._filetype) {
       this._shouldRenderTextBuffer = true
+      return
+    }
+
+    // When bidi anchors are enabled, don't render stale textBuffer cells while
+    // a new highlight pass is in flight — partial cell state mixed with newly
+    // arriving Unicode isolate markers produces garbled output. Wait for the
+    // highlight + injection pipeline to apply the next clean styled snapshot.
+    if (this._bidi !== "never") {
+      this._shouldRenderTextBuffer = this._content.length > 0 && this._hadInitialContent
+      this._hadInitialContent = true
       return
     }
 
