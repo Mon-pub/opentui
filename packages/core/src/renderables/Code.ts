@@ -1,94 +1,94 @@
-import { type RenderContext } from "../types.js";
-import { StyledText } from "../lib/styled-text.js";
-import { SyntaxStyle } from "../syntax-style.js";
-import { getTreeSitterClient, treeSitterToStyledText, TreeSitterClient } from "../lib/tree-sitter/index.js";
-import { TextBufferRenderable, type TextBufferOptions } from "./TextBufferRenderable.js";
-import type { OptimizedBuffer } from "../buffer.js";
-import type { SimpleHighlight } from "../lib/tree-sitter/types.js";
-import type { TextChunk } from "../text-buffer.js";
-import { treeSitterToTextChunks } from "../lib/tree-sitter-styled-text.js";
+import { type RenderContext } from "../types.js"
+import { StyledText } from "../lib/styled-text.js"
+import { SyntaxStyle } from "../syntax-style.js"
+import { getTreeSitterClient, treeSitterToStyledText, TreeSitterClient } from "../lib/tree-sitter/index.js"
+import { TextBufferRenderable, type TextBufferOptions } from "./TextBufferRenderable.js"
+import type { OptimizedBuffer } from "../buffer.js"
+import type { SimpleHighlight } from "../lib/tree-sitter/types.js"
+import type { TextChunk } from "../text-buffer.js"
+import { treeSitterToTextChunks } from "../lib/tree-sitter-styled-text.js"
 
 export interface HighlightContext {
-  content: string;
-  filetype: string;
-  syntaxStyle: SyntaxStyle;
+  content: string
+  filetype: string
+  syntaxStyle: SyntaxStyle
 }
 
 export type OnHighlightCallback = (
   highlights: SimpleHighlight[],
   context: HighlightContext,
-) => SimpleHighlight[] | undefined | Promise<SimpleHighlight[] | undefined>;
+) => SimpleHighlight[] | undefined | Promise<SimpleHighlight[] | undefined>
 
 export interface ChunkRenderContext extends HighlightContext {
-  highlights: SimpleHighlight[];
+  highlights: SimpleHighlight[]
 }
 
 export type OnChunksCallback = (
   chunks: TextChunk[],
   context: ChunkRenderContext,
-) => TextChunk[] | undefined | Promise<TextChunk[] | undefined>;
+) => TextChunk[] | undefined | Promise<TextChunk[] | undefined>
 
 export interface CodeOptions extends TextBufferOptions {
-  content?: string;
-  filetype?: string;
-  syntaxStyle: SyntaxStyle;
-  treeSitterClient?: TreeSitterClient;
-  conceal?: boolean;
-  drawUnstyledText?: boolean;
-  streaming?: boolean;
-  baseHighlight?: string;
-  onHighlight?: OnHighlightCallback;
-  onChunks?: OnChunksCallback;
-  bidi?: "auto" | "always" | "never";
+  content?: string
+  filetype?: string
+  syntaxStyle: SyntaxStyle
+  treeSitterClient?: TreeSitterClient
+  conceal?: boolean
+  drawUnstyledText?: boolean
+  streaming?: boolean
+  baseHighlight?: string
+  onHighlight?: OnHighlightCallback
+  onChunks?: OnChunksCallback
+  bidi?: "auto" | "always" | "never"
 }
 
 export class CodeRenderable extends TextBufferRenderable {
-  private _content: string;
-  private _filetype?: string;
-  private _syntaxStyle: SyntaxStyle;
-  private _isHighlighting: boolean = false;
-  private _treeSitterClient: TreeSitterClient;
-  private _highlightsDirty: boolean = false;
-  private _highlightSnapshotId: number = 0;
-  private _conceal: boolean;
-  private _drawUnstyledText: boolean;
-  private _shouldRenderTextBuffer: boolean = true;
-  private _streaming: boolean;
-  private _hadInitialContent: boolean = false;
-  private _lastHighlights: SimpleHighlight[] = [];
-  private _baseHighlight?: string;
-  private _onHighlight?: OnHighlightCallback;
-  private _onChunks?: OnChunksCallback;
-  private _highlightingPromise: Promise<void> = Promise.resolve();
-  private _bidi: "auto" | "always" | "never" = "never";
-  private _lastBidiWidth: number = -1;
+  private _content: string
+  private _filetype?: string
+  private _syntaxStyle: SyntaxStyle
+  private _isHighlighting: boolean = false
+  private _treeSitterClient: TreeSitterClient
+  private _highlightsDirty: boolean = false
+  private _highlightSnapshotId: number = 0
+  private _conceal: boolean
+  private _drawUnstyledText: boolean
+  private _shouldRenderTextBuffer: boolean = true
+  private _streaming: boolean
+  private _hadInitialContent: boolean = false
+  private _lastHighlights: SimpleHighlight[] = []
+  private _baseHighlight?: string
+  private _onHighlight?: OnHighlightCallback
+  private _onChunks?: OnChunksCallback
+  private _highlightingPromise: Promise<void> = Promise.resolve()
+  private _bidi: "auto" | "always" | "never" = "never"
+  private _lastBidiWidth: number = -1
 
-  private static readonly _RLI = "\u2067"; // Right-to-Left Isolate
-  private static readonly _LRI = "\u2066"; // Left-to-Right Isolate
-  private static readonly _PDI = "\u2069";
-  private static readonly _LRM = "\u200e";
-  private static readonly _RTL_RE = /[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff]/;
+  private static readonly _RLI = "\u2067" // Right-to-Left Isolate
+  private static readonly _LRI = "\u2066" // Left-to-Right Isolate
+  private static readonly _PDI = "\u2069"
+  private static readonly _LRM = "\u200e"
+  private static readonly _RTL_RE = /[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff]/
   protected _contentDefaultOptions = {
     content: "",
     conceal: true,
     drawUnstyledText: true,
     streaming: false,
-  } satisfies Partial<CodeOptions>;
+  } satisfies Partial<CodeOptions>
 
   constructor(ctx: RenderContext, options: CodeOptions) {
-    super(ctx, options);
+    super(ctx, options)
 
-    this._content = options.content ?? this._contentDefaultOptions.content;
-    this._filetype = options.filetype;
-    this._syntaxStyle = options.syntaxStyle;
-    this._treeSitterClient = options.treeSitterClient ?? getTreeSitterClient();
-    this._conceal = options.conceal ?? this._contentDefaultOptions.conceal;
-    this._drawUnstyledText = options.drawUnstyledText ?? this._contentDefaultOptions.drawUnstyledText;
-    this._streaming = options.streaming ?? this._contentDefaultOptions.streaming;
-    this._baseHighlight = options.baseHighlight;
-    this._onHighlight = options.onHighlight;
-    this._onChunks = options.onChunks;
-    this._bidi = options.bidi ?? "never";
+    this._content = options.content ?? this._contentDefaultOptions.content
+    this._filetype = options.filetype
+    this._syntaxStyle = options.syntaxStyle
+    this._treeSitterClient = options.treeSitterClient ?? getTreeSitterClient()
+    this._conceal = options.conceal ?? this._contentDefaultOptions.conceal
+    this._drawUnstyledText = options.drawUnstyledText ?? this._contentDefaultOptions.drawUnstyledText
+    this._streaming = options.streaming ?? this._contentDefaultOptions.streaming
+    this._baseHighlight = options.baseHighlight
+    this._onHighlight = options.onHighlight
+    this._onChunks = options.onChunks
+    this._bidi = options.bidi ?? "never"
 
     if (this._bidi !== "never") {
       // Char-wrap acts as a safety net: our injectBidiAnchors pre-splits at
@@ -96,299 +96,308 @@ export class CodeRenderable extends TextBufferRenderable {
       // If it does (e.g., a single token longer than width), char-wrap clips
       // cells inside renderable bounds — protecting adjacent renderables
       // (sidebar) from cell bleed-through.
-      this._wrapMode = "char";
-      this.textBufferView.setWrapMode("char");
+      this._wrapMode = "char"
+      this.textBufferView.setWrapMode("char")
       if (this.width > 0) {
-        this.textBufferView.setWrapWidth(this.width);
+        this.textBufferView.setWrapWidth(this.width)
       }
     }
 
     if (this._content.length > 0) {
-      this.textBuffer.setText(this._content);
-      this.updateTextInfo();
-      this._shouldRenderTextBuffer = this._drawUnstyledText || !this._filetype;
+      this.textBuffer.setText(this._content)
+      this.updateTextInfo()
+      this._shouldRenderTextBuffer = this._drawUnstyledText || !this._filetype
     }
 
-    this._highlightsDirty = this._content.length > 0;
+    this._highlightsDirty = this._content.length > 0
   }
 
   get content(): string {
-    return this._content;
+    return this._content
   }
 
   set content(value: string) {
     if (this._content !== value) {
-      this._content = value;
-      this._highlightsDirty = true;
-      this._highlightSnapshotId++;
+      this._content = value
+      this._highlightsDirty = true
+      this._highlightSnapshotId++
 
       if (this._streaming && !this._drawUnstyledText && this._filetype && this._bidi === "never") {
-        this.requestRender();
-        return;
+        this.requestRender()
+        return
       }
 
-      this.textBuffer.setText(value);
-      this.updateTextInfo();
+      this.textBuffer.setText(value)
+      this.updateTextInfo()
     }
   }
 
   get filetype(): string | undefined {
-    return this._filetype;
+    return this._filetype
   }
 
   set filetype(value: string | undefined) {
     if (this._filetype !== value) {
-      this._filetype = value;
-      this._highlightsDirty = true;
+      this._filetype = value
+      this._highlightsDirty = true
     }
   }
 
   get syntaxStyle(): SyntaxStyle {
-    return this._syntaxStyle;
+    return this._syntaxStyle
   }
 
   set syntaxStyle(value: SyntaxStyle) {
     if (this._syntaxStyle !== value) {
-      this._syntaxStyle = value;
-      this._highlightsDirty = true;
+      this._syntaxStyle = value
+      this._highlightsDirty = true
     }
   }
 
   get conceal(): boolean {
-    return this._conceal;
+    return this._conceal
   }
 
   set conceal(value: boolean) {
     if (this._conceal !== value) {
-      this._conceal = value;
-      this._highlightsDirty = true;
+      this._conceal = value
+      this._highlightsDirty = true
     }
   }
 
   get drawUnstyledText(): boolean {
-    return this._drawUnstyledText;
+    return this._drawUnstyledText
   }
 
   set drawUnstyledText(value: boolean) {
     if (this._drawUnstyledText !== value) {
-      this._drawUnstyledText = value;
-      this._highlightsDirty = true;
+      this._drawUnstyledText = value
+      this._highlightsDirty = true
     }
   }
 
   get streaming(): boolean {
-    return this._streaming;
+    return this._streaming
   }
 
   set streaming(value: boolean) {
     if (this._streaming !== value) {
-      this._streaming = value;
-      this._hadInitialContent = false;
-      this._lastHighlights = [];
-      this._highlightsDirty = true;
+      this._streaming = value
+      this._hadInitialContent = false
+      this._lastHighlights = []
+      this._highlightsDirty = true
     }
   }
 
   get treeSitterClient(): TreeSitterClient {
-    return this._treeSitterClient;
+    return this._treeSitterClient
   }
 
   set treeSitterClient(value: TreeSitterClient) {
     if (this._treeSitterClient !== value) {
-      this._treeSitterClient = value;
-      this._highlightsDirty = true;
+      this._treeSitterClient = value
+      this._highlightsDirty = true
     }
   }
 
   get onHighlight(): OnHighlightCallback | undefined {
-    return this._onHighlight;
+    return this._onHighlight
   }
 
   get baseHighlight(): string | undefined {
-    return this._baseHighlight;
+    return this._baseHighlight
   }
 
   set baseHighlight(value: string | undefined) {
     if (this._baseHighlight !== value) {
-      this._baseHighlight = value;
-      this._highlightsDirty = true;
+      this._baseHighlight = value
+      this._highlightsDirty = true
     }
   }
 
   set onHighlight(value: OnHighlightCallback | undefined) {
     if (this._onHighlight !== value) {
-      this._onHighlight = value;
-      this._highlightsDirty = true;
+      this._onHighlight = value
+      this._highlightsDirty = true
     }
   }
 
   get onChunks(): OnChunksCallback | undefined {
-    return this._onChunks;
+    return this._onChunks
   }
 
   set onChunks(value: OnChunksCallback | undefined) {
     if (this._onChunks !== value) {
-      this._onChunks = value;
-      this._highlightsDirty = true;
+      this._onChunks = value
+      this._highlightsDirty = true
     }
   }
 
   get bidi(): "auto" | "always" | "never" {
-    return this._bidi;
+    return this._bidi
   }
 
   set bidi(value: "auto" | "always" | "never") {
     if (this._bidi !== value) {
-      this._bidi = value;
-      const newWrapMode = value !== "never" ? "char" : "word";
-      this._wrapMode = newWrapMode;
-      this.textBufferView.setWrapMode(newWrapMode);
+      this._bidi = value
+      const newWrapMode = value !== "never" ? "char" : "word"
+      this._wrapMode = newWrapMode
+      this.textBufferView.setWrapMode(newWrapMode)
       if (value !== "never" && this.width > 0) {
-        this.textBufferView.setWrapWidth(this.width);
+        this.textBufferView.setWrapWidth(this.width)
       }
-      this._highlightsDirty = true;
-      this._lastBidiWidth = -1;
-      this.requestRender();
+      this._highlightsDirty = true
+      this._lastBidiWidth = -1
+      this.requestRender()
     }
   }
 
   get isHighlighting(): boolean {
-    return this._isHighlighting;
+    return this._isHighlighting
   }
 
   get highlightingDone(): Promise<void> {
-    return this._highlightingPromise;
+    return this._highlightingPromise
   }
 
   protected onResize(width: number, height: number): void {
-    super.onResize(width, height);
-    if (this._bidi !== "never" && width !== this._lastBidiWidth) {
-      const fullText = this._content;
-      if (this._bidi === "always" || CodeRenderable._RTL_RE.test(fullText)) {
-        this._highlightsDirty = true;
+    super.onResize(width, height)
+    if (this._bidi !== "never") {
+      // Layout completes after construction on fresh sessions (width=0 at
+      // ctor). Update wrapWidth here so native char-wrap clips at the
+      // renderable's actual bounds and cells never bleed into adjacent
+      // renderables (sidebar).
+      if (width > 0) {
+        this.textBufferView.setWrapWidth(width)
+      }
+      if (width !== this._lastBidiWidth) {
+        const fullText = this._content
+        if (this._bidi === "always" || CodeRenderable._RTL_RE.test(fullText)) {
+          this._highlightsDirty = true
+        }
       }
     }
   }
 
   protected async transformChunks(chunks: TextChunk[], context: ChunkRenderContext): Promise<TextChunk[]> {
     if (this._onChunks) {
-      const modified = await this._onChunks(chunks, context);
-      chunks = modified ?? chunks;
+      const modified = await this._onChunks(chunks, context)
+      chunks = modified ?? chunks
     }
 
     if (this._bidi !== "never" && this.width > 0) {
-      const fullText = chunks.map((c) => c.text).join("");
-      const hasRtl = CodeRenderable._RTL_RE.test(fullText);
+      const fullText = chunks.map((c) => c.text).join("")
+      const hasRtl = CodeRenderable._RTL_RE.test(fullText)
       if (this._bidi === "always" || hasRtl) {
-        chunks = this.injectBidiAnchors(chunks, this.width);
+        chunks = this.injectBidiAnchors(chunks, this.width)
       }
     }
 
-    return chunks;
+    return chunks
   }
 
   private injectBidiAnchors(chunks: TextChunk[], width: number): TextChunk[] {
-    const PDI = CodeRenderable._PDI;
-    const LRM = CodeRenderable._LRM;
-    const RLI = CodeRenderable._RLI;
-    const LRI = CodeRenderable._LRI;
-    const RTL_RE = CodeRenderable._RTL_RE;
+    const PDI = CodeRenderable._PDI
+    const LRM = CodeRenderable._LRM
+    const RLI = CodeRenderable._RLI
+    const LRI = CodeRenderable._LRI
+    const RTL_RE = CodeRenderable._RTL_RE
 
-    if (width <= 0) return chunks;
+    if (width <= 0) return chunks
     // Each emitted row contains 3 BiDi format chars: RLI + PDI + LRM. Some
     // terminals/renderers count them as cells even though they should be
     // zero-width — reserve a budget so the row's *cell* total never exceeds
     // the renderable's width, regardless of how the renderer measures them.
-    const wrapWidth = Math.max(1, width - 5);
+    const wrapWidth = Math.max(1, width - 5)
 
     // Build per-char list with originating chunk reference for styling preservation
-    type Cell = { ch: string; chunk: TextChunk };
-    const cells: Cell[] = [];
+    type Cell = { ch: string; chunk: TextChunk }
+    const cells: Cell[] = []
     for (const chunk of chunks) {
       for (const ch of [...chunk.text]) {
-        cells.push({ ch, chunk });
+        cells.push({ ch, chunk })
       }
     }
 
     // Word-aware wrap into display rows
-    const rows: Cell[][] = [];
-    let row: Cell[] = [];
-    let lastSpaceIdx = -1;
+    const rows: Cell[][] = []
+    let row: Cell[] = []
+    let lastSpaceIdx = -1
 
     for (const cell of cells) {
       if (cell.ch === "\n") {
-        rows.push(row);
-        row = [];
-        lastSpaceIdx = -1;
-        continue;
+        rows.push(row)
+        row = []
+        lastSpaceIdx = -1
+        continue
       }
-      row.push(cell);
-      if (cell.ch === " ") lastSpaceIdx = row.length - 1;
+      row.push(cell)
+      if (cell.ch === " ") lastSpaceIdx = row.length - 1
       if (row.length >= wrapWidth) {
         if (lastSpaceIdx > 0) {
-          const completed = row.slice(0, lastSpaceIdx);
-          const remainder = row.slice(lastSpaceIdx + 1);
-          rows.push(completed);
-          row = remainder;
-          lastSpaceIdx = -1;
+          const completed = row.slice(0, lastSpaceIdx)
+          const remainder = row.slice(lastSpaceIdx + 1)
+          rows.push(completed)
+          row = remainder
+          lastSpaceIdx = -1
           for (let j = row.length - 1; j >= 0; j--) {
             if (row[j].ch === " ") {
-              lastSpaceIdx = j;
-              break;
+              lastSpaceIdx = j
+              break
             }
           }
         } else {
-          rows.push(row);
-          row = [];
-          lastSpaceIdx = -1;
+          rows.push(row)
+          row = []
+          lastSpaceIdx = -1
         }
       }
     }
-    if (row.length > 0) rows.push(row);
+    if (row.length > 0) rows.push(row)
 
     // Emit each row wrapped in per-row isolate (RLI if RTL detected, LRI otherwise),
     // followed by PDI+LRM. Self-contained scope per visual row prevents BiDi state
     // leaking across rows or into adjacent renderables on the same terminal row.
-    const mk = (text: string): TextChunk => ({ __isChunk: true as const, text });
-    const result: TextChunk[] = [];
+    const mk = (text: string): TextChunk => ({ __isChunk: true as const, text })
+    const result: TextChunk[] = []
     for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
+      const r = rows[i]
       if (r.length === 0) {
-        if (i < rows.length - 1) result.push(mk("\n"));
-        continue;
+        if (i < rows.length - 1) result.push(mk("\n"))
+        continue
       }
-      const rowText = r.map((c) => c.ch).join("");
-      const iso = RTL_RE.test(rowText) ? RLI : LRI;
-      result.push(mk(iso));
-      let j = 0;
+      const rowText = r.map((c) => c.ch).join("")
+      const iso = RTL_RE.test(rowText) ? RLI : LRI
+      result.push(mk(iso))
+      let j = 0
       while (j < r.length) {
-        const startChunk = r[j].chunk;
-        let k = j;
-        while (k < r.length && r[k].chunk === startChunk) k++;
+        const startChunk = r[j].chunk
+        let k = j
+        while (k < r.length && r[k].chunk === startChunk) k++
         const segText = r
           .slice(j, k)
           .map((c) => c.ch)
-          .join("");
-        result.push({ ...startChunk, text: segText });
-        j = k;
+          .join("")
+        result.push({ ...startChunk, text: segText })
+        j = k
       }
-      result.push(mk(PDI + LRM));
+      result.push(mk(PDI + LRM))
       if (i < rows.length - 1) {
-        result.push(mk("\n"));
+        result.push(mk("\n"))
       }
     }
 
-    return result;
+    return result
   }
 
   private ensureVisibleTextBeforeHighlight(): void {
-    if (this.isDestroyed) return;
+    if (this.isDestroyed) return
 
-    const content = this._content;
+    const content = this._content
 
     if (!this._filetype) {
-      this._shouldRenderTextBuffer = true;
-      return;
+      this._shouldRenderTextBuffer = true
+      return
     }
 
     // When bidi anchors are enabled, don't render stale textBuffer cells while
@@ -396,72 +405,72 @@ export class CodeRenderable extends TextBufferRenderable {
     // arriving Unicode isolate markers produces garbled output. Wait for the
     // highlight + injection pipeline to apply the next clean styled snapshot.
     if (this._bidi !== "never") {
-      this._shouldRenderTextBuffer = this._content.length > 0 && this._hadInitialContent;
-      this._hadInitialContent = true;
-      return;
+      this._shouldRenderTextBuffer = this._content.length > 0 && this._hadInitialContent
+      this._hadInitialContent = true
+      return
     }
 
-    const isInitialContent = this._streaming && !this._hadInitialContent;
-    const shouldDrawUnstyledNow = this._streaming ? isInitialContent && this._drawUnstyledText : this._drawUnstyledText;
+    const isInitialContent = this._streaming && !this._hadInitialContent
+    const shouldDrawUnstyledNow = this._streaming ? isInitialContent && this._drawUnstyledText : this._drawUnstyledText
 
     if (this._streaming && !isInitialContent) {
-      this._shouldRenderTextBuffer = true;
+      this._shouldRenderTextBuffer = true
     } else if (shouldDrawUnstyledNow) {
-      this.textBuffer.setText(content);
-      this._shouldRenderTextBuffer = true;
+      this.textBuffer.setText(content)
+      this._shouldRenderTextBuffer = true
     } else {
-      this._shouldRenderTextBuffer = false;
+      this._shouldRenderTextBuffer = false
     }
   }
 
   private async startHighlight(): Promise<void> {
-    const content = this._content;
-    const filetype = this._filetype;
-    const snapshotId = ++this._highlightSnapshotId;
+    const content = this._content
+    const filetype = this._filetype
+    const snapshotId = ++this._highlightSnapshotId
 
-    if (!filetype) return;
+    if (!filetype) return
 
-    const isInitialContent = this._streaming && !this._hadInitialContent;
+    const isInitialContent = this._streaming && !this._hadInitialContent
     if (isInitialContent) {
-      this._hadInitialContent = true;
+      this._hadInitialContent = true
     }
 
-    this._isHighlighting = true;
+    this._isHighlighting = true
 
     try {
-      const result = await this._treeSitterClient.highlightOnce(content, filetype);
+      const result = await this._treeSitterClient.highlightOnce(content, filetype)
 
       if (snapshotId !== this._highlightSnapshotId) {
-        this.requestRender();
-        return;
+        this.requestRender()
+        return
       }
 
-      if (this.isDestroyed) return;
+      if (this.isDestroyed) return
 
-      let highlights = result.highlights ?? [];
+      let highlights = result.highlights ?? []
 
       if (this._onHighlight && highlights.length >= 0) {
         const context: HighlightContext = {
           content,
           filetype,
           syntaxStyle: this._syntaxStyle,
-        };
-        const modified = await this._onHighlight(highlights, context);
+        }
+        const modified = await this._onHighlight(highlights, context)
         if (modified !== undefined) {
-          highlights = modified;
+          highlights = modified
         }
       }
 
       if (snapshotId !== this._highlightSnapshotId) {
-        this.requestRender();
-        return;
+        this.requestRender()
+        return
       }
 
-      if (this.isDestroyed) return;
+      if (this.isDestroyed) return
 
       if (highlights.length > 0) {
         if (this._streaming) {
-          this._lastHighlights = highlights;
+          this._lastHighlights = highlights
         }
       }
 
@@ -471,72 +480,72 @@ export class CodeRenderable extends TextBufferRenderable {
           filetype,
           syntaxStyle: this._syntaxStyle,
           highlights,
-        };
+        }
 
         let chunks = treeSitterToTextChunks(content, highlights, this._syntaxStyle, {
           enabled: this._conceal,
           baseHighlight: this._baseHighlight,
-        });
+        })
 
-        chunks = await this.transformChunks(chunks, context);
+        chunks = await this.transformChunks(chunks, context)
 
         if (snapshotId !== this._highlightSnapshotId) {
-          this.requestRender();
-          return;
+          this.requestRender()
+          return
         }
 
-        if (this.isDestroyed) return;
+        if (this.isDestroyed) return
 
-        const styledText = new StyledText(chunks);
-        this.textBuffer.setStyledText(styledText);
+        const styledText = new StyledText(chunks)
+        this.textBuffer.setStyledText(styledText)
       } else {
-        this.textBuffer.setText(content);
+        this.textBuffer.setText(content)
       }
 
-      this._shouldRenderTextBuffer = true;
-      this._isHighlighting = false;
-      this._highlightsDirty = false;
-      this.updateTextInfo();
-      this.requestRender();
+      this._shouldRenderTextBuffer = true
+      this._isHighlighting = false
+      this._highlightsDirty = false
+      this.updateTextInfo()
+      this.requestRender()
     } catch (error) {
       if (snapshotId !== this._highlightSnapshotId) {
-        this.requestRender();
-        return;
+        this.requestRender()
+        return
       }
 
-      console.warn("Code highlighting failed, falling back to plain text:", error);
-      if (this.isDestroyed) return;
-      this.textBuffer.setText(content);
-      this._shouldRenderTextBuffer = true;
-      this._isHighlighting = false;
-      this._highlightsDirty = false;
-      this.updateTextInfo();
-      this.requestRender();
+      console.warn("Code highlighting failed, falling back to plain text:", error)
+      if (this.isDestroyed) return
+      this.textBuffer.setText(content)
+      this._shouldRenderTextBuffer = true
+      this._isHighlighting = false
+      this._highlightsDirty = false
+      this.updateTextInfo()
+      this.requestRender()
     }
   }
 
   public getLineHighlights(lineIdx: number) {
-    return this.textBuffer.getLineHighlights(lineIdx);
+    return this.textBuffer.getLineHighlights(lineIdx)
   }
 
   protected renderSelf(buffer: OptimizedBuffer): void {
     if (this._highlightsDirty) {
-      if (this.isDestroyed) return;
+      if (this.isDestroyed) return
 
       if (this._content.length === 0) {
-        this._shouldRenderTextBuffer = false;
-        this._highlightsDirty = false;
+        this._shouldRenderTextBuffer = false
+        this._highlightsDirty = false
       } else if (!this._filetype) {
-        this._shouldRenderTextBuffer = true;
-        this._highlightsDirty = false;
+        this._shouldRenderTextBuffer = true
+        this._highlightsDirty = false
       } else {
-        this.ensureVisibleTextBeforeHighlight();
-        this._highlightsDirty = false;
-        this._highlightingPromise = this.startHighlight();
+        this.ensureVisibleTextBeforeHighlight()
+        this._highlightsDirty = false
+        this._highlightingPromise = this.startHighlight()
       }
     }
 
-    if (!this._shouldRenderTextBuffer) return;
-    super.renderSelf(buffer);
+    if (!this._shouldRenderTextBuffer) return
+    super.renderSelf(buffer)
   }
 }
